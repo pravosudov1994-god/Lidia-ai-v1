@@ -12,19 +12,38 @@ export type CloudflareTextResult = {
   response?: string;
 };
 
-export function getCloudflareAiConfig() {
-  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-  const token = process.env.CLOUDFLARE_AI_TOKEN;
+// Cloudflare Account IDs are identifiers, not secrets. Keep the runtime
+// variable as an override, but use the project account as a safe fallback so
+// Workers AI keeps working even if a plain-text env var is not exposed via
+// process.env in the current Cloudflare runtime.
+export const DEFAULT_CLOUDFLARE_ACCOUNT_ID = "b153e427b9a5240580394c3da041a870";
 
-  if (!accountId || !token) {
+export function getCloudflareAiConfig() {
+  const accountId =
+    process.env.CLOUDFLARE_ACCOUNT_ID?.trim() || DEFAULT_CLOUDFLARE_ACCOUNT_ID;
+  const token = process.env.CLOUDFLARE_AI_TOKEN?.trim();
+
+  if (!token) {
     return null;
   }
 
   return { accountId, token };
 }
 
+export function getCloudflareAiStatus() {
+  const runtimeAccountId = Boolean(process.env.CLOUDFLARE_ACCOUNT_ID?.trim());
+  const hasAiToken = Boolean(process.env.CLOUDFLARE_AI_TOKEN?.trim());
+
+  return {
+    configured: hasAiToken,
+    accountId: true,
+    accountIdSource: runtimeAccountId ? "runtime" : "fallback",
+    aiToken: hasAiToken,
+  };
+}
+
 export function cloudflareAiNotConfiguredMessage() {
-  return "Бесплатный Cloudflare AI пока не настроен. Добавьте CLOUDFLARE_ACCOUNT_ID и CLOUDFLARE_AI_TOKEN в Cloudflare Secrets.";
+  return "Бесплатный Cloudflare AI пока не настроен. Добавьте CLOUDFLARE_AI_TOKEN в Cloudflare Secrets.";
 }
 
 export async function runCloudflareModel(
