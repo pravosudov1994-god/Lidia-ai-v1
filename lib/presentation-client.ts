@@ -83,7 +83,6 @@ export async function buildPptx(deck: PresentationDeck) {
     bold: true,
     color: "F8FAFC",
     margin: 0,
-    breakLine: false,
   });
   if (deck.subtitle) {
     titleSlide.addText(deck.subtitle, {
@@ -156,8 +155,7 @@ export async function buildPptx(deck: PresentationDeck) {
       fontFace: "Arial",
       fontSize: 18,
       color: "CBD5E1",
-      breakLine: false,
-      paraSpaceAfterPt: 15,
+      paraSpaceAfter: 15,
       margin: 0,
       valign: "top",
     });
