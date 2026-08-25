@@ -1,0 +1,327 @@
+.chat-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.chat-capabilities span {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: #b9c6d8;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.message-stack {
+  width: min(720px, 92%);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.chat-message-row.user .message-stack {
+  align-items: flex-end;
+}
+
+.chat-message-row.assistant .message-stack {
+  align-items: flex-start;
+}
+
+.message-stack .chat-bubble {
+  max-width: 100%;
+}
+
+.message-attachments {
+  width: min(560px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.attachment-card {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(11, 18, 32, 0.92);
+}
+
+.attachment-preview,
+.pending-attachment img {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.attachment-file-icon,
+.pending-file-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  background: rgba(124, 58, 237, 0.13);
+  font-size: 20px;
+}
+
+.attachment-info,
+.pending-attachment > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.attachment-info strong,
+.pending-attachment strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.attachment-info span,
+.pending-attachment span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.attachment-action {
+  padding: 7px 9px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  color: #c4b5fd;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.attachment-action:hover {
+  background: rgba(124, 58, 237, 0.12);
+}
+
+.generated-images {
+  width: min(560px, 100%);
+}
+
+.generated-image-card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(11, 18, 32, 0.92);
+}
+
+.generated-image-card > img {
+  display: block;
+  width: 100%;
+  max-height: 620px;
+  object-fit: contain;
+  background: #0b1220;
+}
+
+.generated-image-actions {
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+}
+
+.generated-image-actions a,
+.generated-image-actions button {
+  flex: 1;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.035);
+  color: #e2e8f0;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.generated-image-actions button:hover,
+.generated-image-actions a:hover {
+  background: rgba(124, 58, 237, 0.12);
+}
+
+.chat-error {
+  margin: 0 16px 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(248, 113, 113, 0.25);
+  border-radius: 12px;
+  background: rgba(127, 29, 29, 0.12);
+  color: #fca5a5;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.pending-attachments {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 16px 0;
+  border-top: 1px solid var(--line);
+  background: rgba(2, 6, 23, 0.55);
+}
+
+.pending-attachment {
+  flex: 0 0 min(280px, 78vw);
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.pending-attachment img,
+.pending-attachment .pending-file-icon {
+  width: 42px;
+  height: 42px;
+}
+
+.pending-attachment > button {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+  font-size: 18px;
+}
+
+.chat-form-enhanced {
+  align-items: stretch;
+}
+
+.chat-compose {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+}
+
+.chat-compose textarea {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.chat-compose textarea:focus {
+  border: 0;
+}
+
+.compose-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 9px 9px;
+}
+
+.attach-button,
+.image-action-button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.attach-button:hover,
+.image-action-button:hover {
+  border-color: rgba(129, 140, 248, 0.55);
+  background: rgba(124, 58, 237, 0.09);
+}
+
+.attach-button:disabled,
+.image-action-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chat-file-note {
+  padding: 0 16px 13px;
+  background: rgba(2, 6, 23, 0.55);
+  color: #68778e;
+  font-size: 10px;
+  text-align: center;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+@media (max-width: 600px) {
+  .chat-capabilities {
+    padding: 8px 12px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+
+  .chat-capabilities span {
+    flex: 0 0 auto;
+  }
+
+  .message-stack {
+    width: 96%;
+  }
+
+  .attachment-card {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .attachment-preview,
+  .attachment-file-icon {
+    width: 42px;
+    height: 42px;
+  }
+
+  .attachment-action {
+    grid-column: 1 / -1;
+    text-align: center;
+  }
+
+  .generated-image-actions {
+    flex-direction: column;
+  }
+
+  .chat-form-enhanced {
+    gap: 8px;
+  }
+
+  .compose-tools {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .attach-button,
+  .image-action-button {
+    flex: 0 0 auto;
+  }
+}
