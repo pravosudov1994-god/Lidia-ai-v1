@@ -1,9 +1,19 @@
 import { NextResponse } from "next/server";
 import { LIDIA_SYSTEM_PROMPT } from "../../../lib/lidia-prompt";
 
+type ChatAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  kind: "image" | "file";
+  analyzable: boolean;
+};
+
 type ChatMessage = {
   role: "assistant" | "user";
   content: string;
+  attachments?: ChatAttachment[];
 };
 
 type OpenAIResponse = {
@@ -22,12 +32,26 @@ type OpenAIResponse = {
   };
 };
 
+function isAttachment(value: unknown): value is ChatAttachment {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  return (
+    typeof item.id === "string" &&
+    typeof item.name === "string" &&
+    typeof item.mimeType === "string" &&
+    typeof item.size === "number" &&
+    (item.kind === "image" || item.kind === "file") &&
+    typeof item.analyzable === "boolean"
+  );
+}
+
 function isChatMessage(value: unknown): value is ChatMessage {
   if (!value || typeof value !== "object") return false;
   const message = value as Record<string, unknown>;
   return (
     (message.role === "assistant" || message.role === "user") &&
-    typeof message.content === "string"
+    typeof message.content === "string" &&
+    (message.attachments === undefined || Array.isArray(message.attachments))
   );
 }
 
@@ -59,10 +83,69 @@ function openAIErrorMessage(status: number, error?: OpenAIResponse["error"]) {
   }
 
   if (status === 400) {
-    return `OpenAI отклонил параметры запроса (${code}).`;
+    return `OpenAI отклонил параметры запроса (${code}). Возможно, формат одного из вложений пока не поддерживается.`;
   }
 
   return `OpenAI вернул ошибку ${status} (${code}). Попробуйте ещё раз.`;
+}
+
+function normalizeMessage(message: ChatMessage): ChatMessage {
+  return {
+    role: message.role,
+    content: message.content.slice(0, 4_000),
+    attachments: Array.isArray(message.attachments)
+      ? message.attachments.filter(isAttachment).slice(0, 6)
+      : undefined,
+  };
+}
+
+function buildInput(messages: ChatMessage[]) {
+  return messages.map((message) => {
+    if (message.role === "assistant") {
+      return {
+        role: "assistant",
+        content: message.content,
+      };
+    }
+
+    const attachments = message.attachments ?? [];
+    const unsupported = attachments.filter((attachment) => !attachment.analyzable);
+    const text = [
+      message.content || "Пользователь отправил вложения без дополнительного текста.",
+      unsupported.length
+        ? `\nПримечание системы: приложены файлы, содержимое которых сейчас нельзя передать модели: ${unsupported.map((item) => item.name).join(", ")}. Не утверждайте, что прочитали их содержимое.`
+        : "",
+    ].join("");
+
+    const content: Array<Record<string, unknown>> = [
+      {
+        type: "input_text",
+        text,
+      },
+    ];
+
+    for (const attachment of attachments) {
+      if (!attachment.analyzable) continue;
+
+      if (attachment.kind === "image") {
+        content.push({
+          type: "input_image",
+          file_id: attachment.id,
+          detail: "auto",
+        });
+      } else {
+        content.push({
+          type: "input_file",
+          file_id: attachment.id,
+        });
+      }
+    }
+
+    return {
+      role: "user",
+      content,
+    };
+  });
 }
 
 export async function POST(request: Request) {
@@ -92,17 +175,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Нужен массив messages." }, { status: 400 });
   }
 
-  const messages = rawMessages.filter(isChatMessage).slice(-20);
+  const messages = rawMessages
+    .filter(isChatMessage)
+    .slice(-20)
+    .map(normalizeMessage);
 
   if (!messages.length) {
     return NextResponse.json({ error: "Диалог пуст." }, { status: 400 });
   }
 
-  if (messages.some((message) => message.content.length > 4_000)) {
-    return NextResponse.json(
-      { error: "Одно из сообщений слишком длинное." },
-      { status: 413 },
-    );
+  const hasUsefulInput = messages.some(
+    (message) => message.content.trim() || (message.attachments?.length ?? 0) > 0,
+  );
+
+  if (!hasUsefulInput) {
+    return NextResponse.json({ error: "Диалог пуст." }, { status: 400 });
   }
 
   const totalCharacters = messages.reduce(
@@ -129,11 +216,8 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         model,
         instructions: LIDIA_SYSTEM_PROMPT,
-        input: messages.map((message) => ({
-          role: message.role,
-          content: message.content,
-        })),
-        max_output_tokens: 1200,
+        input: buildInput(messages),
+        max_output_tokens: 1400,
         store: false,
       }),
     });
