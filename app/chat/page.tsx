@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, KeyboardEvent, useState } from "react";
 
 type Message = {
   role: "assistant" | "user";
@@ -26,27 +26,64 @@ const suggestions = [
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  function submitMessage(value?: string) {
+  async function submitMessage(value?: string) {
     const text = (value ?? input).trim();
-    if (!text) return;
+    if (!text || isLoading) return;
 
-    const nextUserMessage: Message = { role: "user", content: text };
-    setMessages((current) => [
-      ...current,
-      nextUserMessage,
-      {
-        role: "assistant",
-        content:
-          "Отлично, я поняла направление. Следующий важный шаг — посмотреть на текущий поток клиентов и цифры. Скажите, пожалуйста: кто Ваш основной клиент, какой примерно средний чек и откуда сейчас чаще всего приходят новые обращения?",
-      },
-    ]);
+    const userMessage: Message = { role: "user", content: text };
+    const conversation = [...messages, userMessage];
+
+    setMessages(conversation);
     setInput("");
+    setError("");
+    setIsLoading(true);
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ messages: conversation }),
+      });
+
+      const data = (await response.json()) as {
+        reply?: string;
+        error?: string;
+      };
+
+      if (!response.ok || !data.reply) {
+        throw new Error(data.error || "Не удалось получить ответ Лидии.");
+      }
+
+      setMessages((current) => [
+        ...current,
+        { role: "assistant", content: data.reply as string },
+      ]);
+    } catch (requestError) {
+      const message =
+        requestError instanceof Error
+          ? requestError.message
+          : "Не удалось получить ответ Лидии.";
+      setError(message);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    submitMessage();
+    void submitMessage();
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void submitMessage();
+    }
   }
 
   return (
@@ -83,16 +120,22 @@ export default function ChatPage() {
                 <div className="chat-bubble">{message.content}</div>
               </div>
             ))}
+
+            {isLoading && (
+              <div className="chat-message-row assistant">
+                <div className="chat-bubble">Лидия анализирует ситуацию…</div>
+              </div>
+            )}
           </div>
 
-          {messages.length === 1 && (
+          {messages.length === 1 && !isLoading && (
             <div className="chat-suggestions">
               {suggestions.map((suggestion) => (
                 <button
                   className="suggestion-button"
                   key={suggestion}
                   type="button"
-                  onClick={() => submitMessage(suggestion)}
+                  onClick={() => void submitMessage(suggestion)}
                 >
                   {suggestion}
                 </button>
@@ -100,15 +143,27 @@ export default function ChatPage() {
             </div>
           )}
 
+          {error && (
+            <div role="alert" style={{ padding: "0 20px 12px", color: "#ff9b9b" }}>
+              {error}
+            </div>
+          )}
+
           <form className="chat-form" onSubmit={handleSubmit}>
             <textarea
               value={input}
               onChange={(event) => setInput(event.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder="Расскажите Лидии о своём бизнесе..."
               aria-label="Сообщение Лидии"
+              disabled={isLoading}
             />
-            <button className="chat-submit" type="submit" disabled={!input.trim()}>
-              Отправить →
+            <button
+              className="chat-submit"
+              type="submit"
+              disabled={!input.trim() || isLoading}
+            >
+              {isLoading ? "Думаю…" : "Отправить →"}
             </button>
           </form>
         </section>
