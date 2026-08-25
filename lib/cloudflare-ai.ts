@@ -149,7 +149,7 @@ export async function cloudflareToMarkdown(file: File | Blob, name: string) {
 }
 
 export function dataUrlToBlob(dataUrl: string) {
-  const match = dataUrl.match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
+  const match = dataUrl.match(/^data:([^;,]+)?(;base64)?,([\s\S]*)$/);
   if (!match) throw new Error("Некорректное изображение.");
 
   const mimeType = match[1] || "application/octet-stream";
