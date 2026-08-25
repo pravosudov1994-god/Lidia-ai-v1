@@ -38,6 +38,7 @@ function extractText(response: OpenAIResponse) {
 }
 
 export async function POST(request: Request) {
+  // Runtime secret configured in Cloudflare as OPENAI_API_KEY.
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
