@@ -16,6 +16,9 @@ type OpenAIResponse = {
   }>;
   error?: {
     message?: string;
+    code?: string;
+    type?: string;
+    param?: string | null;
   };
 };
 
@@ -37,8 +40,32 @@ function extractText(response: OpenAIResponse) {
     .trim();
 }
 
+function openAIErrorMessage(status: number, error?: OpenAIResponse["error"]) {
+  const code = error?.code || error?.type || `http_${status}`;
+
+  if (status === 401) {
+    return `OpenAI отклонил API-ключ (${code}). Проверьте OPENAI_API_KEY или создайте новый ключ.`;
+  }
+
+  if (status === 403) {
+    return `У API-аккаунта нет доступа к выбранной модели (${code}).`;
+  }
+
+  if (status === 429) {
+    if (error?.code === "insufficient_quota") {
+      return `На OpenAI API закончился баланс или не подключён биллинг (${code}).`;
+    }
+    return `OpenAI временно ограничил запросы (${code}). Попробуйте ещё раз через минуту.`;
+  }
+
+  if (status === 400) {
+    return `OpenAI отклонил параметры запроса (${code}).`;
+  }
+
+  return `OpenAI вернул ошибку ${status} (${code}). Попробуйте ещё раз.`;
+}
+
 export async function POST(request: Request) {
-  // Runtime secret configured in Cloudflare as OPENAI_API_KEY.
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
@@ -91,6 +118,8 @@ export async function POST(request: Request) {
   }
 
   try {
+    const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+
     const openAIResponse = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
@@ -98,7 +127,7 @@ export async function POST(request: Request) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || "gpt-5.6",
+        model,
         instructions: LIDIA_SYSTEM_PROMPT,
         input: messages.map((message) => ({
           role: message.role,
@@ -112,9 +141,17 @@ export async function POST(request: Request) {
     const data = (await openAIResponse.json()) as OpenAIResponse;
 
     if (!openAIResponse.ok) {
-      console.error("OpenAI API error", openAIResponse.status, data.error?.message);
+      console.error("OpenAI API error", {
+        status: openAIResponse.status,
+        model,
+        code: data.error?.code,
+        type: data.error?.type,
+        param: data.error?.param,
+        message: data.error?.message,
+      });
+
       return NextResponse.json(
-        { error: "Лидия временно не может ответить. Попробуйте ещё раз." },
+        { error: openAIErrorMessage(openAIResponse.status, data.error) },
         { status: 502 },
       );
     }
