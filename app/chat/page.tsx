@@ -8,6 +8,11 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  buildPptx,
+  extractPptxText,
+  type PresentationDeck,
+} from "../../lib/presentation-client";
 
 type Attachment = {
   id: string;
@@ -19,6 +24,9 @@ type Attachment = {
   downloadUrl: string;
   previewUrl?: string;
   generated?: boolean;
+  local?: boolean;
+  dataUrl?: string;
+  extractedText?: string;
 };
 
 type Message = {
@@ -28,19 +36,21 @@ type Message = {
   generatedImages?: Attachment[];
 };
 
+type LoadingMode = "image" | "vision" | "presentation" | "chat" | null;
+
 const initialMessages: Message[] = [
   {
     role: "assistant",
     content:
-      "Здравствуйте! Я Лидия — Ваш AI-маркетолог. Давайте сделаем быстрый разбор бизнеса и найдём точки роста.\n\nВы можете не только писать мне, но и прикреплять фотографии товаров, PDF, документы, таблицы и другие файлы. Я могу анализировать поддерживаемые вложения и создавать маркетинговые изображения.\n\nДля начала расскажите, пожалуйста: чем занимается Ваш бизнес и в каком городе или регионе Вы работаете?",
+      "Здравствуйте! Я Лидия — Ваш AI-маркетолог. Давайте сделаем быстрый разбор бизнеса и найдём точки роста.\n\nВы можете прикреплять фотографии товаров и презентации PowerPoint. Я умею бесплатно анализировать изображения через Cloudflare AI, создавать новые визуалы, читать PPTX и собирать новые презентации для скачивания.\n\nДля начала расскажите, пожалуйста: чем занимается Ваш бизнес и в каком городе или регионе Вы работаете?",
   },
 ];
 
 const suggestions = [
   "Разобрать мой бизнес",
-  "Хочу больше клиентов",
-  "Проанализируй мой файл",
+  "Проанализируй фото товара",
   "Создай карточку товара для Ozon",
+  "Создай презентацию для моего бизнеса",
 ];
 
 function formatFileSize(bytes: number) {
@@ -59,12 +69,60 @@ function wantsImageGeneration(text: string) {
   );
 }
 
+function wantsPresentationGeneration(text: string) {
+  return (
+    /(созда|сгенер|сдела|подготов|собер|пересобер)/i.test(text) &&
+    /(презентац|powerpoint|pptx|слайд)/i.test(text)
+  );
+}
+
+function isPptxFile(file: File) {
+  return (
+    file.name.toLowerCase().endsWith(".pptx") ||
+    file.type ===
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  );
+}
+
+function readAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error(`Не удалось прочитать «${file.name}».`));
+    reader.readAsDataURL(file);
+  });
+}
+
+function presentationTextFromDeck(deck: PresentationDeck) {
+  return [
+    deck.title,
+    deck.subtitle || "",
+    ...deck.slides.map(
+      (slide, index) =>
+        `--- Слайд ${index + 1} ---\n${slide.title}\n${slide.bullets.join("\n")}`,
+    ),
+  ]
+    .filter(Boolean)
+    .join("\n\n")
+    .slice(0, 70_000);
+}
+
+function safePresentationName(title: string) {
+  const clean = title
+    .replace(/[^a-zA-Z0-9а-яА-ЯёЁ._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 70);
+  return `${clean || "LIDIA-presentation"}.pptx`;
+}
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [loadingMode, setLoadingMode] = useState<LoadingMode>(null);
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -86,6 +144,49 @@ export default function ChatPage() {
       for (const file of selected) {
         if (file.size > 20 * 1024 * 1024) {
           setError(`Файл «${file.name}» больше 20 МБ и пока не может быть загружен.`);
+          continue;
+        }
+
+        if (file.type.startsWith("image/")) {
+          if (file.size > 10 * 1024 * 1024) {
+            setError(`Фото «${file.name}» больше 10 МБ. Для AI-анализа выберите более лёгкую версию.`);
+            continue;
+          }
+
+          const dataUrl = await readAsDataUrl(file);
+          const downloadUrl = URL.createObjectURL(file);
+          const attachment: Attachment = {
+            id: `local-image-${crypto.randomUUID()}`,
+            name: file.name,
+            mimeType: file.type || "image/jpeg",
+            size: file.size,
+            kind: "image",
+            analyzable: true,
+            local: true,
+            dataUrl,
+            previewUrl: dataUrl,
+            downloadUrl,
+          };
+          setPendingAttachments((current) => [...current, attachment]);
+          continue;
+        }
+
+        if (isPptxFile(file)) {
+          const extractedText = await extractPptxText(file);
+          const downloadUrl = URL.createObjectURL(file);
+          const attachment: Attachment = {
+            id: `local-pptx-${crypto.randomUUID()}`,
+            name: file.name,
+            mimeType:
+              "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            size: file.size,
+            kind: "file",
+            analyzable: true,
+            local: true,
+            extractedText,
+            downloadUrl,
+          };
+          setPendingAttachments((current) => [...current, attachment]);
           continue;
         }
 
@@ -129,6 +230,14 @@ export default function ChatPage() {
     setPendingAttachments((current) =>
       current.filter((item) => item.id !== attachment.id),
     );
+
+    if (attachment.local) {
+      if (attachment.downloadUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(attachment.downloadUrl);
+      }
+      return;
+    }
+
     void fetch(`/api/files/${encodeURIComponent(attachment.id)}`, {
       method: "DELETE",
     }).catch(() => undefined);
@@ -140,28 +249,103 @@ export default function ChatPage() {
     setInput("Сделай ещё один вариант на основе этой картинки: ");
   }
 
+  function reusePresentation(attachment: Attachment) {
+    if (pendingAttachments.some((item) => item.id === attachment.id)) return;
+    setPendingAttachments((current) => [...current.slice(0, 5), attachment]);
+    setInput("Пересобери эту презентацию и улучши её: ");
+  }
+
   async function submitMessage(value?: string) {
     const text = (value ?? input).trim();
     if ((!text && !pendingAttachments.length) || isLoading || isUploading) return;
 
+    const sentAttachments = pendingAttachments;
     const userMessage: Message = {
       role: "user",
       content: text,
-      attachments: pendingAttachments.length ? pendingAttachments : undefined,
+      attachments: sentAttachments.length ? sentAttachments : undefined,
     };
     const conversation = [...messages, userMessage];
+
+    const localImages = sentAttachments.filter(
+      (attachment) => attachment.kind === "image" && attachment.dataUrl,
+    );
+    const presentation = sentAttachments.find(
+      (attachment) => attachment.extractedText,
+    );
+
+    const mode: LoadingMode = wantsPresentationGeneration(text)
+      ? "presentation"
+      : wantsImageGeneration(text)
+        ? "image"
+        : presentation
+          ? "presentation"
+          : localImages.length
+            ? "vision"
+            : "chat";
 
     setMessages(conversation);
     setInput("");
     setPendingAttachments([]);
     setError("");
     setIsLoading(true);
+    setLoadingMode(mode);
 
     try {
-      if (text && wantsImageGeneration(text)) {
+      if (wantsPresentationGeneration(text)) {
+        const response = await fetch("/api/presentations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: "create",
+            prompt: text,
+            sourceText: presentation?.extractedText || "",
+          }),
+        });
+
+        const data = (await response.json()) as {
+          reply?: string;
+          deck?: PresentationDeck;
+          error?: string;
+        };
+
+        if (!response.ok || !data.deck) {
+          throw new Error(data.error || "Не удалось подготовить презентацию.");
+        }
+
+        const blob = await buildPptx(data.deck);
+        const downloadUrl = URL.createObjectURL(blob);
+        const filename = safePresentationName(data.deck.title);
+        const generatedPresentation: Attachment = {
+          id: `generated-pptx-${crypto.randomUUID()}`,
+          name: filename,
+          mimeType:
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          size: blob.size,
+          kind: "file",
+          analyzable: true,
+          generated: true,
+          local: true,
+          extractedText: presentationTextFromDeck(data.deck),
+          downloadUrl,
+        };
+
+        setMessages((current) => [
+          ...current,
+          {
+            role: "assistant",
+            content:
+              data.reply || "Готово — презентация PowerPoint создана и готова к скачиванию.",
+            attachments: [generatedPresentation],
+          },
+        ]);
+      } else if (text && wantsImageGeneration(text)) {
         const recentImages = conversation
           .flatMap((message) => message.attachments ?? [])
-          .filter((attachment) => attachment.kind === "image")
+          .filter(
+            (attachment) =>
+              attachment.kind === "image" && typeof attachment.dataUrl === "string",
+          )
           .slice(-1);
 
         const response = await fetch("/api/images", {
@@ -171,7 +355,11 @@ export default function ChatPage() {
           },
           body: JSON.stringify({
             prompt: text,
-            sourceImages: recentImages,
+            sourceImages: recentImages.map((attachment) => ({
+              name: attachment.name,
+              mimeType: attachment.mimeType,
+              dataUrl: attachment.dataUrl,
+            })),
           }),
         });
 
@@ -192,6 +380,49 @@ export default function ChatPage() {
             content: data.reply || "Готово — изображение создано.",
             generatedImages: [data.image as Attachment],
           },
+        ]);
+      } else if (presentation?.extractedText) {
+        const response = await fetch("/api/presentations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: "analyze",
+            prompt: text || "Проанализируй эту презентацию и предложи улучшения.",
+            sourceText: presentation.extractedText,
+          }),
+        });
+
+        const data = (await response.json()) as { reply?: string; error?: string };
+        if (!response.ok || !data.reply) {
+          throw new Error(data.error || "Не удалось проанализировать презентацию.");
+        }
+
+        setMessages((current) => [
+          ...current,
+          { role: "assistant", content: data.reply as string },
+        ]);
+      } else if (localImages.length) {
+        const response = await fetch("/api/vision", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: text || "Проанализируй эти изображения с точки зрения маркетинга.",
+            images: localImages.map((attachment) => ({
+              name: attachment.name,
+              mimeType: attachment.mimeType,
+              dataUrl: attachment.dataUrl,
+            })),
+          }),
+        });
+
+        const data = (await response.json()) as { reply?: string; error?: string };
+        if (!response.ok || !data.reply) {
+          throw new Error(data.error || "Не удалось проанализировать изображение.");
+        }
+
+        setMessages((current) => [
+          ...current,
+          { role: "assistant", content: data.reply as string },
         ]);
       } else {
         const response = await fetch("/api/chat", {
@@ -224,6 +455,7 @@ export default function ChatPage() {
       setError(message);
     } finally {
       setIsLoading(false);
+      setLoadingMode(null);
     }
   }
 
@@ -238,6 +470,15 @@ export default function ChatPage() {
       void submitMessage();
     }
   }
+
+  const loadingText =
+    loadingMode === "image"
+      ? "Лидия создаёт изображение через Cloudflare AI…"
+      : loadingMode === "vision"
+        ? "Лидия смотрит и анализирует изображение…"
+        : loadingMode === "presentation"
+          ? "Лидия работает с презентацией…"
+          : "Лидия анализирует ситуацию…";
 
   return (
     <main className="chat-page">
@@ -265,9 +506,9 @@ export default function ChatPage() {
           </div>
 
           <div className="chat-capabilities">
-            <span>📎 Файлы</span>
-            <span>🖼 Анализ фото</span>
+            <span>🖼 Бесплатный анализ фото</span>
             <span>✨ Генерация изображений</span>
+            <span>📊 Чтение и создание PPTX</span>
           </div>
 
           <div className="chat-messages" aria-live="polite">
@@ -290,23 +531,38 @@ export default function ChatPage() {
                               alt={attachment.name}
                             />
                           ) : (
-                            <div className="attachment-file-icon">📄</div>
+                            <div className="attachment-file-icon">
+                              {attachment.name.toLowerCase().endsWith(".pptx") ? "📊" : "📄"}
+                            </div>
                           )}
                           <div className="attachment-info">
                             <strong>{attachment.name}</strong>
                             <span>
                               {formatFileSize(attachment.size)}
+                              {attachment.extractedText ? " · PPTX прочитан" : ""}
                               {!attachment.analyzable ? " · только хранение" : ""}
                             </span>
                           </div>
-                          <a
-                            className="attachment-action"
-                            href={attachment.downloadUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            Скачать
-                          </a>
+                          <div className="attachment-actions-group">
+                            <a
+                              className="attachment-action"
+                              href={attachment.downloadUrl}
+                              download={attachment.name}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Скачать
+                            </a>
+                            {attachment.generated && attachment.extractedText && (
+                              <button
+                                className="attachment-action attachment-action-button"
+                                type="button"
+                                onClick={() => reusePresentation(attachment)}
+                              >
+                                Доработать
+                              </button>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -320,8 +576,13 @@ export default function ChatPage() {
                             <img src={image.previewUrl} alt="Изображение, созданное Лидией" />
                           )}
                           <div className="generated-image-actions">
-                            <a href={image.downloadUrl} target="_blank" rel="noreferrer">
-                              ↓ Скачать PNG
+                            <a
+                              href={image.downloadUrl}
+                              download={image.name}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              ↓ Скачать изображение
                             </a>
                             <button type="button" onClick={() => reuseImage(image)}>
                               ✨ Доработать
@@ -337,9 +598,7 @@ export default function ChatPage() {
 
             {isLoading && (
               <div className="chat-message-row assistant">
-                <div className="chat-bubble">
-                  {wantsImageGeneration(input) ? "Лидия создаёт изображение…" : "Лидия анализирует ситуацию…"}
-                </div>
+                <div className="chat-bubble">{loadingText}</div>
               </div>
             )}
           </div>
@@ -355,6 +614,11 @@ export default function ChatPage() {
                     if (suggestion.includes("Ozon")) {
                       setInput("Создай продающую карточку товара для Ozon на основе прикреплённого фото товара");
                       fileInputRef.current?.click();
+                    } else if (suggestion.includes("фото")) {
+                      setInput("Проанализируй это фото и скажи, что улучшить с точки зрения маркетинга");
+                      fileInputRef.current?.click();
+                    } else if (suggestion.includes("презентацию")) {
+                      setInput("Создай презентацию для моего бизнеса на 8 слайдов");
                     } else {
                       void submitMessage(suggestion);
                     }
@@ -379,11 +643,16 @@ export default function ChatPage() {
                   {attachment.kind === "image" && attachment.previewUrl ? (
                     <img src={attachment.previewUrl} alt="" />
                   ) : (
-                    <span className="pending-file-icon">📄</span>
+                    <span className="pending-file-icon">
+                      {attachment.name.toLowerCase().endsWith(".pptx") ? "📊" : "📄"}
+                    </span>
                   )}
                   <div>
                     <strong>{attachment.name}</strong>
-                    <span>{formatFileSize(attachment.size)}</span>
+                    <span>
+                      {formatFileSize(attachment.size)}
+                      {attachment.extractedText ? " · готово к анализу" : ""}
+                    </span>
                   </div>
                   <button
                     type="button"
@@ -403,6 +672,7 @@ export default function ChatPage() {
               className="visually-hidden"
               type="file"
               multiple
+              accept="image/*,.pptx,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.json"
               onChange={handleFileInput}
             />
 
@@ -411,7 +681,7 @@ export default function ChatPage() {
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Напишите Лидии или прикрепите фото / файл..."
+                placeholder="Напишите Лидии или прикрепите фото / PPTX / файл..."
                 aria-label="Сообщение Лидии"
                 disabled={isLoading}
               />
@@ -422,7 +692,7 @@ export default function ChatPage() {
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isLoading || isUploading}
                 >
-                  {isUploading ? "Загрузка…" : "📎 Прикрепить"}
+                  {isUploading ? "Обработка…" : "📎 Прикрепить"}
                 </button>
                 <button
                   className="image-action-button"
@@ -434,7 +704,19 @@ export default function ChatPage() {
                   }
                   disabled={isLoading}
                 >
-                  ✨ Создать изображение
+                  ✨ Картинка
+                </button>
+                <button
+                  className="presentation-action-button"
+                  type="button"
+                  onClick={() =>
+                    setInput(
+                      "Создай профессиональную презентацию для моего бизнеса на 8 слайдов",
+                    )
+                  }
+                  disabled={isLoading}
+                >
+                  📊 Презентация
                 </button>
               </div>
             </div>
@@ -452,7 +734,7 @@ export default function ChatPage() {
             </button>
           </form>
           <div className="chat-file-note">
-            До 6 файлов в сообщении · до 20 МБ каждый · изображения, PDF, документы, таблицы и другие форматы
+            Фото и PPTX обрабатываются без OpenAI: изображения — через бесплатный лимит Cloudflare AI, презентации читаются локально в браузере
           </div>
         </section>
       </div>
