@@ -19,30 +19,31 @@ function normalizeDeck(value: unknown): PresentationDeck | null {
   const title = typeof input.title === "string" ? input.title.trim() : "";
   const subtitle = typeof input.subtitle === "string" ? input.subtitle.trim() : "";
   const rawSlides = Array.isArray(input.slides) ? input.slides : [];
+  const slides: PresentationSlide[] = [];
 
-  const slides = rawSlides
-    .map((slide) => {
-      if (!slide || typeof slide !== "object") return null;
-      const item = slide as Record<string, unknown>;
-      const slideTitle = typeof item.title === "string" ? item.title.trim() : "";
-      const bullets = Array.isArray(item.bullets)
-        ? item.bullets
-            .filter((bullet): bullet is string => typeof bullet === "string")
-            .map((bullet) => bullet.trim())
-            .filter(Boolean)
-            .slice(0, 7)
-        : [];
-      const note = typeof item.note === "string" ? item.note.trim() : undefined;
+  for (const slide of rawSlides) {
+    if (!slide || typeof slide !== "object") continue;
+    const item = slide as Record<string, unknown>;
+    const slideTitle = typeof item.title === "string" ? item.title.trim() : "";
+    const bullets = Array.isArray(item.bullets)
+      ? item.bullets
+          .filter((bullet): bullet is string => typeof bullet === "string")
+          .map((bullet) => bullet.trim())
+          .filter(Boolean)
+          .slice(0, 7)
+      : [];
+    const note = typeof item.note === "string" ? item.note.trim() : "";
 
-      if (!slideTitle) return null;
-      return {
-        title: slideTitle,
-        bullets,
-        note,
-      } satisfies PresentationSlide;
-    })
-    .filter((slide): slide is PresentationSlide => Boolean(slide))
-    .slice(0, 18);
+    if (!slideTitle) continue;
+
+    slides.push(
+      note
+        ? { title: slideTitle, bullets, note }
+        : { title: slideTitle, bullets },
+    );
+
+    if (slides.length >= 18) break;
+  }
 
   if (!title || !slides.length) return null;
 
