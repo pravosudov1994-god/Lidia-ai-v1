@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./chat/chat-enhancements.css";
 
 export const metadata: Metadata = {
   title: "LIDIA AI — AI-маркетолог для бизнеса",
